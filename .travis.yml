@@ -1,0 +1,46 @@
+sudo: required
+
+language: ruby
+
+services:
+  - docker
+
+stages:
+  - build
+  - test
+  - release
+  - deploy
+
+env:
+  - HEROKU_APP_NAME=express-mongodb-base CONTAINER_TEST_IMAGE=registry.heroku.com/$HEROKU_APP_NAME:$TRAVIS_COMMIT CONTAINER_RELEASE_IMAGE=registry.heroku.com/$HEROKU_APP_NAME/web
+  
+# safelist
+branches:
+  only:
+  - master
+  - stable
+
+jobs:
+  include:
+  - stage: build
+    script:
+      - docker login -u $HEROKU_USERNAME -p $HEROKU_PRODUCTION_API_KEY registry.heroku.com
+      - docker build -t $CONTAINER_TEST_IMAGE .
+      - docker push $CONTAINER_TEST_IMAGE
+  - stage: test
+    env:
+      - DOCKER_COMPOSE_VERSION=1.4.2
+    script:
+      - docker-compose -f docker-compose.e2e.yml up --exit-code-from app-e2e
+  - stage: release
+    script:
+      - docker login -u $HEROKU_USERNAME -p $HEROKU_PRODUCTION_API_KEY registry.heroku.com
+      - docker pull $CONTAINER_TEST_IMAGE
+      - docker tag $CONTAINER_TEST_IMAGE $CONTAINER_RELEASE_IMAGE
+      - docker push $CONTAINER_RELEASE_IMAGE
+  - stage: deploy
+    image: node:10.5.0-alpine
+    script:
+      - yarn global add heroku@7.4.11
+      - export HEROKU_API_KEY=$HEROKU_PRODUCTION_API_KEY
+      - heroku container:release web --app $HEROKU_APP_NAME
